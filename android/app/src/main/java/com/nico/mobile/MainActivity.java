@@ -13,6 +13,7 @@ import android.os.*;
 import android.speech.*;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
 import android.view.*;
 import android.webkit.*;
 import android.widget.*;
@@ -21,6 +22,7 @@ import java.net.*;
 import java.text.Normalizer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.json.JSONObject;
 
 public class MainActivity extends Activity {
     private static final int REQ_AUDIO = 77;
@@ -51,6 +53,7 @@ public class MainActivity extends Activity {
     private String mac() { return prefs.getString("mac", ""); }
     private String broadcast() { return prefs.getString("broadcast", "192.168.1.255"); }
     private int wolPort() { return prefs.getInt("wol_port", 9); }
+    private String mobileVoiceName() { return prefs.getString("mobile_voice_name", ""); }
 
     @Override
     protected void onCreate(Bundle state) {
@@ -213,6 +216,17 @@ public class MainActivity extends Activity {
         micLp.setMargins(0, 0, 0, dp(10));
         content.addView(mic, micLp);
 
+        Button typeCommand = new Button(this);
+        typeCommand.setAllCaps(false);
+        typeCommand.setText("⌨   DIGITAR COMANDO PARA O PC");
+        typeCommand.setTextSize(12);
+        typeCommand.setTextColor(text());
+        typeCommand.setBackground(rounded(Color.rgb(7, 16, 24), Color.rgb(32, 91, 116), 17));
+        typeCommand.setOnClickListener(v -> showCommandDialog());
+        LinearLayout.LayoutParams cmdLp = new LinearLayout.LayoutParams(-1, dp(52));
+        cmdLp.setMargins(0, 0, 0, dp(10));
+        content.addView(typeCommand, cmdLp);
+
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
         grid.setRowCount(3);
@@ -273,6 +287,7 @@ public class MainActivity extends Activity {
                 tts.setLanguage(new Locale("pt", "BR"));
                 tts.setSpeechRate(1.08f);
                 tts.setPitch(.92f);
+                applySavedMobileVoice();
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                     @Override public void onStart(String id) {
                         runOnUiThread(() -> {
@@ -415,10 +430,9 @@ public class MainActivity extends Activity {
         }
 
         if (pcOnlineQuick()) {
-            say("O NICO do computador está online. Vou abrir o controle remoto para continuar sua conversa.");
-            new Handler(Looper.getMainLooper()).postDelayed(this::openDashboard, 900);
+            relayCommandToPc(raw);
         } else {
-            say("Esse comando precisa do NICO do computador online. Posso ligar o PC para você.");
+            say("Esse comando precisa do NICO do computador online. Ligue o PC e tente novamente.");
         }
     }
 
@@ -656,6 +670,203 @@ public class MainActivity extends Activity {
         web.loadUrl("https://" + ip + ":8000/");
     }
 
+    private void showCommandDialog() {
+        if (pcIp().isEmpty()) {
+            showSettings();
+            return;
+        }
+        final EditText input = field("Ex.: Nico, abra o Chrome e entre no YouTube", "");
+        input.setSingleLine(false);
+        input.setMinLines(3);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Comando para o NICO do PC")
+                .setMessage("O comando será interpretado pelo mesmo NICO que roda no computador.")
+                .setView(input)
+                .setPositiveButton("Enviar", (d, w) -> {
+                    String cmd = input.getText().toString().trim();
+                    if (!cmd.isEmpty()) relayCommandToPc(cmd);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void relayCommandToPc(String command) {
+        final String ip = pcIp();
+        final String clean = command == null ? "" : command.trim();
+        if (ip.isEmpty() || clean.isEmpty()) return;
+        if (!pcOnlineQuick()) {
+            say("O NICO do computador não está online.");
+            return;
+        }
+
+        status.setText("ENVIANDO COMANDO AO PC…");
+        face.setMode("COMANDANDO PC");
+        transcript.setText("Você → PC: " + clean);
+
+        final WebView web = new WebView(this);
+        WebSettings ws = web.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        web.setVisibility(View.INVISIBLE);
+        web.addJavascriptInterface(new CommandBridge(web), "NicoCommandBridge");
+
+        addContentView(web, new ViewGroup.LayoutParams(1, 1));
+
+        final boolean[] sent = {false};
+        final boolean[] triedHttp = {false};
+
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler,
+                                           android.net.http.SslError error) {
+                String host = "";
+                try { host = Uri.parse(error.getUrl()).getHost(); } catch (Exception ignored) {}
+                if (ip.equals(host)) handler.proceed(); else handler.cancel();
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame() && !triedHttp[0]) {
+                    triedHttp[0] = true;
+                    view.loadUrl("http://" + ip + ":8000/login");
+                }
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                Uri u;
+                try { u = Uri.parse(url); } catch (Exception e) { return; }
+                String pagePath = u.getPath();
+
+                if ("/login".equals(pagePath)) {
+                    String loginCheck =
+                            "(function(){" +
+                            "const d=localStorage.getItem('jarvis_device_token')||localStorage.getItem('nico_device_token');" +
+                            "if(!d){window.NicoCommandBridge.commandError('not_paired');}" +
+                            "})()";
+                    view.evaluateJavascript(loginCheck, null);
+                    return;
+                }
+
+                if (!"/".equals(pagePath) || sent[0]) return;
+                sent[0] = true;
+
+                String quoted = JSONObject.quote(clean);
+                String js =
+                        "(async()=>{" +
+                        "const t=sessionStorage.getItem('jarvis_token')||sessionStorage.getItem('nico_token');" +
+                        "if(!t){window.NicoCommandBridge.commandError('not_paired');return;}" +
+                        "try{" +
+                        "const r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({text:" + quoted + "})});" +
+                        "if(r.ok)window.NicoCommandBridge.commandOk();else window.NicoCommandBridge.commandError('http_'+r.status);" +
+                        "}catch(e){window.NicoCommandBridge.commandError(String(e));}" +
+                        "})()";
+                view.evaluateJavascript(js, null);
+            }
+        });
+
+        web.loadUrl("https://" + ip + ":8000/login");
+    }
+
+    public class CommandBridge {
+        private final WebView web;
+        CommandBridge(WebView web) { this.web = web; }
+
+        private void cleanup() {
+            try {
+                ViewGroup parent = (ViewGroup) web.getParent();
+                if (parent != null) parent.removeView(web);
+                web.destroy();
+            } catch (Exception ignored) {}
+        }
+
+        @JavascriptInterface
+        public void commandOk() {
+            runOnUiThread(() -> {
+                status.setText("●  COMANDO ENVIADO AO NICO DO PC");
+                status.setTextColor(green());
+                face.setMode("PC EXECUTANDO");
+                say("Comando enviado para o NICO do computador.");
+                cleanup();
+            });
+        }
+
+        @JavascriptInterface
+        public void commandError(String error) {
+            runOnUiThread(() -> {
+                face.setMode("ERRO");
+                if ("not_paired".equals(error)) {
+                    say("Primeiro abra Remoto e faça o pareamento com o NICO do computador. Depois os comandos funcionam direto pelo celular.");
+                } else {
+                    say("Não consegui enviar o comando ao computador: " + error);
+                }
+                cleanup();
+            });
+        }
+    }
+
+    private void applySavedMobileVoice() {
+        if (tts == null) return;
+        String wanted = mobileVoiceName();
+        if (wanted.isEmpty()) return;
+        try {
+            Set<Voice> voices = tts.getVoices();
+            if (voices == null) return;
+            for (Voice v : voices) {
+                if (wanted.equals(v.getName())) {
+                    tts.setVoice(v);
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void showVoicePicker() {
+        if (tts == null || tts.getVoices() == null) {
+            say("As vozes ainda estão carregando. Tente novamente em alguns segundos.");
+            return;
+        }
+
+        List<Voice> voices = new ArrayList<>();
+        for (Voice v : tts.getVoices()) {
+            Locale locale = v.getLocale();
+            if (locale != null && "pt".equalsIgnoreCase(locale.getLanguage())) {
+                voices.add(v);
+            }
+        }
+
+        if (voices.isEmpty()) voices.addAll(tts.getVoices());
+        Collections.sort(voices, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+
+        String[] labels = new String[voices.size()];
+        int selected = -1;
+        String current = mobileVoiceName();
+
+        for (int i = 0; i < voices.size(); i++) {
+            Voice v = voices.get(i);
+            Locale loc = v.getLocale();
+            String lang = loc == null ? "" : loc.toLanguageTag();
+            labels[i] = v.getName() + (lang.isEmpty() ? "" : "  •  " + lang)
+                    + (v.isNetworkConnectionRequired() ? "  •  online" : "  •  local");
+            if (v.getName().equals(current)) selected = i;
+        }
+
+        final List<Voice> pick = voices;
+        new AlertDialog.Builder(this)
+                .setTitle("Voz do NICO no celular")
+                .setSingleChoiceItems(labels, selected, (d, which) -> {
+                    Voice chosen = pick.get(which);
+                    prefs.edit().putString("mobile_voice_name", chosen.getName()).apply();
+                    tts.setVoice(chosen);
+                    d.dismiss();
+                    say("Essa será minha voz no celular.");
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
     private void confirmPowerAction(String title, String action) {
         if (pcIp().isEmpty()) {
             showSettings();
@@ -810,6 +1021,17 @@ public class MainActivity extends Activity {
         box.addView(hw);
         box.addView(bc);
         box.addView(pt);
+
+        Button voice = new Button(this);
+        voice.setAllCaps(false);
+        voice.setText("🎙  Escolher voz do NICO");
+        voice.setTextColor(text());
+        voice.setBackground(rounded(Color.rgb(7, 16, 25), Color.rgb(24, 68, 88), 12));
+        LinearLayout.LayoutParams voiceLp = new LinearLayout.LayoutParams(-1, dp(52));
+        voiceLp.setMargins(0, dp(8), 0, dp(4));
+        voice.setLayoutParams(voiceLp);
+        voice.setOnClickListener(v -> showVoicePicker());
+        box.addView(voice);
 
         new AlertDialog.Builder(this)
                 .setTitle("Configurar NICO Mobile")
