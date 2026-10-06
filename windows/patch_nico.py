@@ -22,7 +22,7 @@ if not (ROOT / "main.py").exists():
 
 actions = ROOT / "actions"
 actions.mkdir(exist_ok=True)
-for name in ("generate_image.py", "create_website.py", "wallpaper_control.py", "whatsapp_web.py"):
+for name in ("generate_image.py", "create_website.py", "wallpaper_control.py", "whatsapp_web.py", "screen_agent.py", "window_control.py", "smart_file_organizer.py", "clipboard_assistant.py"):
     src = HERE / "actions" / name
     if src.exists():
         shutil.copy2(src, actions / name)
@@ -136,6 +136,55 @@ if ui.exists():
                   'self.setWindowTitle(f"{_display} // Neural Desktop Intelligence")')
     s = s.replace('self.setWindowTitle(f"{display} — {APP_VERSION}")',
                   'self.setWindowTitle(f"{display} // Neural Desktop Intelligence")')
+
+    # NICO HERO V2: premium status rail and localized live states.
+    s = s.replace('txt, col = "●  SPEAKING",  qcol(C.ACC)',
+                  'txt, col = "●  FALANDO",  qcol(C.ACC)')
+    s = s.replace('txt, col = f"{sym}  THINKING",   qcol(C.ACC2)',
+                  'txt, col = f"{sym}  PENSANDO",   qcol(C.ACC2)')
+    s = s.replace('txt, col = f"{sym}  PROCESSING", qcol(C.ACC2)',
+                  'txt, col = f"{sym}  EXECUTANDO", qcol(C.ACC2)')
+    s = s.replace('txt, col = f"{sym}  LISTENING",  qcol(C.GREEN)',
+                  'txt, col = f"{sym}  OUVINDO",  qcol(C.GREEN)')
+
+    _hero_marker = '''        p.drawPixmap(0, 0, self._grid_cache)
+
+        # ── holographic head'''
+    _hero_inject = '''        p.drawPixmap(0, 0, self._grid_cache)
+
+        # NICO HERO V2 — top identity rail + live capability tags.
+        p.setBrush(QBrush(qcol(C.PANEL2)))
+        p.setPen(QPen(qcol(C.BORDER_A), 1))
+        p.drawRoundedRect(QRectF(18, 14, max(40, W - 36), 34), 12, 12)
+
+        p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        p.setPen(QPen(qcol(C.WHITE), 1))
+        p.drawText(QRectF(34, 19, max(40, W * 0.45), 22),
+                   Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                   "NICO // NEURAL DESKTOP")
+
+        p.setFont(QFont("Segoe UI", 8, QFont.Weight.Medium))
+        p.setPen(QPen(qcol(C.PRI), 1))
+        p.drawText(QRectF(W * 0.47, 19, max(40, W * 0.49 - 24), 22),
+                   Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                   "VOICE  •  VISION  •  AGENT  •  MOBILE")
+
+        # ── holographic head'''
+    if _hero_marker in s and 'NICO HERO V2 — top identity rail' not in s:
+        s = s.replace(_hero_marker, _hero_inject)
+
+    _wave_marker = '''        p.end()   # end deterministically so the backing store never flushes an active painter'''
+    _wave_inject = '''        # Capability rail below the waveform.
+        cap_y = min(H - 28, wy + 30)
+        p.setFont(QFont("Segoe UI", 7, QFont.Weight.Medium))
+        p.setPen(QPen(qcol(C.TEXT_DIM), 1))
+        p.drawText(QRectF(0, cap_y, W, 18), Qt.AlignmentFlag.AlignCenter,
+                   "SCREEN AGENT   //   FILES   //   WINDOWS   //   CLIPBOARD   //   MOBILE LINK")
+
+        p.end()   # end deterministically so the backing store never flushes an active painter'''
+    if _wave_marker in s and 'Capability rail below the waveform' not in s:
+        s = s.replace(_wave_marker, _wave_inject)
+
     ui.write_text(s, encoding="utf-8")
 
 # --- Brand dashboard and add authenticated mobile power endpoint -------------
@@ -206,3 +255,8 @@ print("- criacao de sites pela tela")
 print("- wallpaper")
 print("- WhatsApp Web")
 print("- endpoint autenticado para desligar/reiniciar pelo celular")
+print("- screen agent: olha e controla a tela")
+print("- controle de janelas: foco/minimiza/maximiza/encaixa")
+print("- organizador inteligente de arquivos")
+print("- assistente de area de transferencia")
+print("- hero NICO V2 com estados em tempo real")
