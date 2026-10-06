@@ -19,6 +19,7 @@ import android.webkit.*;
 import android.widget.*;
 
 import java.net.*;
+import java.io.*;
 import java.text.Normalizer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -55,6 +56,7 @@ public class MainActivity extends Activity {
     private String broadcast() { return prefs.getString("broadcast", "192.168.1.255"); }
     private int wolPort() { return prefs.getInt("wol_port", 9); }
     private String mobileVoiceName() { return prefs.getString("mobile_voice_name", ""); }
+    private String bridgeCode() { return prefs.getString("bridge_code", ""); }
 
     @Override
     protected void onCreate(Bundle state) {
@@ -264,7 +266,7 @@ public class MainActivity extends Activity {
         content.addView(grid, new LinearLayout.LayoutParams(-1, dp(272)));
 
         TextView footer = label(
-                "NICO MOBILE  •  CONEXÃO LOCAL SEGURA  •  V1.1",
+                "NICO MOBILE  •  BRIDGE 8765  •  V1.2",
                 8, Color.rgb(68, 98, 112));
         footer.setLetterSpacing(.08f);
         footer.setPadding(0, dp(12), 0, 0);
@@ -503,7 +505,7 @@ public class MainActivity extends Activity {
     private boolean pcOnlineQuick() {
         String ip = pcIp();
         if (ip.isEmpty()) return false;
-        return portOpen(ip, 8000, 2500) || portOpen(ip, 8001, 2500);
+        return portOpen(ip, 8765, 2500);
     }
 
     private boolean pcOnline() {
@@ -540,7 +542,7 @@ public class MainActivity extends Activity {
                 if (host.equals(ip)) continue;
                 jobs++;
                 cs.submit(() -> {
-                    if (portOpen(host, 8000, 700) || portOpen(host, 8001, 700)) return host;
+                    if (portOpen(host, 8765, 700)) return host;
                     return null;
                 });
             }
@@ -581,7 +583,7 @@ public class MainActivity extends Activity {
                     status.setText("○  NICO DO PC NÃO RESPONDEU");
                     status.setTextColor(muted());
                     face.setMode("OFFLINE");
-                    if (speak) say("O aplicativo do computador pode estar aberto, mas o painel remoto não respondeu na rede. Confira o IP, o Wi-Fi e a porta 8000.");
+                    if (speak) say("O NICO do PC não respondeu na ponte mobile. Confira o IP, o Wi-Fi e se a porta 8765 está ativa.");
                 }
             });
         }).start();
@@ -739,12 +741,43 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private String bridgePost(String endpoint, JSONObject body) throws Exception {
+        URL url = new URL("http://" + pcIp() + ":8765" + endpoint);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(3500);
+        conn.setReadTimeout(8000);
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+
+        byte[] payload = body.toString().getBytes("UTF-8");
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(payload);
+        }
+
+        int statusCode = conn.getResponseCode();
+        InputStream in = statusCode >= 200 && statusCode < 300
+                ? conn.getInputStream()
+                : conn.getErrorStream();
+
+        StringBuilder out = new StringBuilder();
+        if (in != null) {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(in, "UTF-8"))) {
+                String line;
+                while ((line = br.readLine()) != null) out.append(line);
+            }
+        }
+        conn.disconnect();
+        return statusCode + "|" + out;
+    }
+
     private void relayCommandToPc(String command) {
-        final String ip = pcIp();
         final String clean = command == null ? "" : command.trim();
-        if (ip.isEmpty() || clean.isEmpty()) return;
-        if (!pcOnlineQuick()) {
-            say("O NICO do computador não está online.");
+        if (pcIp().isEmpty() || clean.isEmpty()) return;
+
+        if (bridgeCode().isEmpty()) {
+            say("Configure o Código do PC no NICO Mobile primeiro.");
+            showSettings();
             return;
         }
 
@@ -752,70 +785,40 @@ public class MainActivity extends Activity {
         face.setMode("COMANDANDO PC");
         transcript.setText("Você → PC: " + clean);
 
-        final WebView web = new WebView(this);
-        WebSettings ws = web.getSettings();
-        ws.setJavaScriptEnabled(true);
-        ws.setDomStorageEnabled(true);
-        ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        web.setVisibility(View.INVISIBLE);
-        web.addJavascriptInterface(new CommandBridge(web), "NicoCommandBridge");
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("code", bridgeCode());
+                body.put("text", clean);
 
-        addContentView(web, new ViewGroup.LayoutParams(1, 1));
+                String raw = bridgePost("/nico/command", body);
+                int sep = raw.indexOf('|');
+                int http = sep > 0 ? Integer.parseInt(raw.substring(0, sep)) : 0;
+                String json = sep >= 0 ? raw.substring(sep + 1) : "{}";
+                JSONObject resp = new JSONObject(json.isEmpty() ? "{}" : json);
 
-        final boolean[] sent = {false};
-        final boolean[] triedHttp = {false};
-
-        web.setWebViewClient(new WebViewClient() {
-            @Override
-            public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler,
-                                           android.net.http.SslError error) {
-                String host = "";
-                try { host = Uri.parse(error.getUrl()).getHost(); } catch (Exception ignored) {}
-                if (ip.equals(host)) handler.proceed(); else handler.cancel();
+                runOnUiThread(() -> {
+                    if (http >= 200 && http < 300 && resp.optBoolean("ok", false)) {
+                        status.setText("●  COMANDO ENVIADO AO NICO DO PC");
+                        status.setTextColor(green());
+                        face.setMode("PC EXECUTANDO");
+                        say("Comando enviado para o NICO do computador.");
+                    } else if ("invalid_code".equals(resp.optString("error"))) {
+                        face.setMode("ERRO");
+                        say("O Código do PC está errado. Abra as configurações e coloque o código mostrado pelo NICO no computador.");
+                    } else {
+                        face.setMode("ERRO");
+                        say("Não consegui enviar o comando para o computador.");
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    face.setMode("ERRO");
+                    status.setText("PC NÃO RESPONDEU NA PORTA 8765");
+                    say("Não consegui conectar à ponte mobile do NICO no computador.");
+                });
             }
-
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame() && !triedHttp[0]) {
-                    triedHttp[0] = true;
-                    view.loadUrl("http://" + ip + ":8000/login");
-                }
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                Uri u;
-                try { u = Uri.parse(url); } catch (Exception e) { return; }
-                String pagePath = u.getPath();
-
-                if ("/login".equals(pagePath)) {
-                    String loginCheck =
-                            "(function(){" +
-                            "const d=localStorage.getItem('jarvis_device_token')||localStorage.getItem('nico_device_token');" +
-                            "if(!d){window.NicoCommandBridge.commandError('not_paired');}" +
-                            "})()";
-                    view.evaluateJavascript(loginCheck, null);
-                    return;
-                }
-
-                if (!"/".equals(pagePath) || sent[0]) return;
-                sent[0] = true;
-
-                String quoted = JSONObject.quote(clean);
-                String js =
-                        "(async()=>{" +
-                        "const t=sessionStorage.getItem('jarvis_token')||sessionStorage.getItem('nico_token');" +
-                        "if(!t){window.NicoCommandBridge.commandError('not_paired');return;}" +
-                        "try{" +
-                        "const r=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({text:" + quoted + "})});" +
-                        "if(r.ok)window.NicoCommandBridge.commandOk();else window.NicoCommandBridge.commandError('http_'+r.status);" +
-                        "}catch(e){window.NicoCommandBridge.commandError(String(e));}" +
-                        "})()";
-                view.evaluateJavascript(js, null);
-            }
-        });
-
-        web.loadUrl("https://" + ip + ":8000/login");
+        }).start();
     }
 
     public class CommandBridge {
@@ -926,9 +929,56 @@ public class MainActivity extends Activity {
                         ? "O computador será desligado. Confirme apenas se você realmente quer encerrar a sessão."
                         : "O computador será reiniciado. Confirme apenas se você realmente quer continuar.")
                 .setPositiveButton(action.equals("shutdown") ? "Desligar" : "Reiniciar",
-                        (d, w) -> openDashboardForPower(action))
+                        (d, w) -> sendBridgePower(action))
                 .setNegativeButton("Cancelar", null)
                 .show();
+    }
+
+    private void sendBridgePower(String action) {
+        if (bridgeCode().isEmpty()) {
+            say("Configure o Código do PC primeiro.");
+            showSettings();
+            return;
+        }
+
+        status.setText(action.equals("shutdown") ? "DESLIGANDO PC…" : "REINICIANDO PC…");
+        face.setMode("ENERGIA");
+
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("code", bridgeCode());
+                body.put("action", action);
+                body.put("confirmed", true);
+
+                String raw = bridgePost("/nico/power", body);
+                int sep = raw.indexOf('|');
+                int http = sep > 0 ? Integer.parseInt(raw.substring(0, sep)) : 0;
+                String json = sep >= 0 ? raw.substring(sep + 1) : "{}";
+                JSONObject resp = new JSONObject(json.isEmpty() ? "{}" : json);
+
+                runOnUiThread(() -> {
+                    if (http >= 200 && http < 300 && resp.optBoolean("ok", false)) {
+                        say(action.equals("shutdown")
+                                ? "Comando enviado. O computador está desligando."
+                                : "Comando enviado. O computador está reiniciando.");
+                        status.setText("COMANDO DE ENERGIA ENVIADO");
+                        face.setMode("ONLINE");
+                    } else if ("invalid_code".equals(resp.optString("error"))) {
+                        say("O Código do PC está errado.");
+                        face.setMode("ERRO");
+                    } else {
+                        say("Não consegui executar a ação de energia.");
+                        face.setMode("ERRO");
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    say("Não consegui conectar ao NICO do computador.");
+                    face.setMode("ERRO");
+                });
+            }
+        }).start();
     }
 
     private void openDashboardForPower(String action) {
@@ -1064,11 +1114,13 @@ public class MainActivity extends Activity {
         EditText hw = field("MAC da placa de rede  •  AA-BB-CC-DD-EE-FF", mac());
         EditText bc = field("Broadcast  •  ex. 192.168.1.255", broadcast());
         EditText pt = field("Porta Wake-on-LAN", String.valueOf(wolPort()));
+        EditText code = field("Código do PC  •  ex. 7K4M9Q2H", bridgeCode());
 
         box.addView(ip);
         box.addView(hw);
         box.addView(bc);
         box.addView(pt);
+        box.addView(code);
 
         Button voice = new Button(this);
         voice.setAllCaps(false);
@@ -1093,6 +1145,7 @@ public class MainActivity extends Activity {
                             .putString("mac", hw.getText().toString().trim())
                             .putString("broadcast", bc.getText().toString().trim())
                             .putInt("wol_port", port)
+                            .putString("bridge_code", code.getText().toString().trim().toUpperCase(Locale.ROOT))
                             .apply();
                     say("Configuração salva.");
                     checkPc(false);
