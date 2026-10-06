@@ -264,7 +264,7 @@ public class MainActivity extends Activity {
         content.addView(grid, new LinearLayout.LayoutParams(-1, dp(272)));
 
         TextView footer = label(
-                "NICO MOBILE  •  CONEXÃO LOCAL SEGURA  •  V1",
+                "NICO MOBILE  •  CONEXÃO LOCAL SEGURA  •  V1.1",
                 8, Color.rgb(68, 98, 112));
         footer.setLetterSpacing(.08f);
         footer.setPadding(0, dp(12), 0, 0);
@@ -503,7 +503,7 @@ public class MainActivity extends Activity {
     private boolean pcOnlineQuick() {
         String ip = pcIp();
         if (ip.isEmpty()) return false;
-        return portOpen(ip, 8000, 450) || portOpen(ip, 8001, 450);
+        return portOpen(ip, 8000, 2500) || portOpen(ip, 8001, 2500);
     }
 
     private boolean pcOnline() {
@@ -540,7 +540,7 @@ public class MainActivity extends Activity {
                 if (host.equals(ip)) continue;
                 jobs++;
                 cs.submit(() -> {
-                    if (portOpen(host, 8000, 180) || portOpen(host, 8001, 180)) return host;
+                    if (portOpen(host, 8000, 700) || portOpen(host, 8001, 700)) return host;
                     return null;
                 });
             }
@@ -567,7 +567,7 @@ public class MainActivity extends Activity {
             showSettings();
             return;
         }
-        status.setText("VERIFICANDO PC…");
+        status.setText("VERIFICANDO PC  •  " + pcIp());
         face.setMode("VERIFICANDO");
         new Thread(() -> {
             boolean online = pcOnline();
