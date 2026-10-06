@@ -1,42 +1,43 @@
-# NICO AI — Windows Assistant
+# NICO AI
 
-NICO is a customized Windows AI assistant build based on **Mark-LV** by FatihMakes.
+NICO é um assistente de IA para Windows e Android com voz, controle remoto, automações, criação de imagens, criação de sites e integração com o computador.
 
-This repository contains the **distribution/build layer** for NICO. GitHub Actions downloads the pinned Mark-LV source, applies the NICO interface and creator modules, packages the app with PyInstaller, and creates a normal Windows installer with Inno Setup.
+## Recursos
 
-## What the installer provides
+- Assistente nativo para Windows
+- Aplicativo Android companheiro
+- Robô/rosto animado com lip-sync
+- Conversação por voz com Gemini Live
+- Perfil de resposta rápida
+- Controle de aplicativos, arquivos, navegador e área de trabalho
+- Wake-on-LAN pelo celular
+- Painel remoto
+- WhatsApp Web
+- Geração de imagens
+- Criação de sites usando uma identidade visual mostrada na tela
+- Atalhos e instalação normal no Windows
 
-- Native Windows desktop application
-- Animated holographic face with mouth/lip-sync while NICO speaks
-- Gemini Live voice conversation
-- Faster voice response profile
-- Windows/app/file/browser control
-- WhatsApp Web messaging
-- Image generation
-- Website generation from a visual identity visible on screen
-- Phone remote dashboard from the upstream project
-- Desktop and Start Menu shortcuts
-- Per-user first-run setup
+## Privacidade
 
-## Privacy / API keys
+Nenhuma Gemini API Key pessoal deve ser incluída no repositório ou em builds públicas.
+Cada instalação configura a própria chave no primeiro uso.
 
-**No Gemini API key is included in the distributed installer.**
-Each person who installs NICO must configure their own Gemini API key on first run.
+## Builds
 
-Do not commit `config/api_keys.json` to this repository.
+Os workflows do GitHub Actions geram as versões Android e Windows.
 
-## Build
+### Android
 
-Open **Actions → Build NICO Windows Installer → Run workflow**.
+Abra **Actions → Build NICO Mobile APK** e baixe o artifact **NICO-Mobile-APK**.
 
-The workflow produces:
-- `NICO-Setup.exe` — installer you can send to another Windows PC
-- `NICO-Portable.zip` — portable build
+### Windows
 
-## License notice
+O instalador do Windows será distribuído como **NICO-Setup.exe** quando o workflow correspondente estiver finalizado.
 
-NICO's build/customization files in this repository are separate from the upstream Mark-LV source.
+## Avisos de terceiros
 
-The generated application contains/adapts **Mark-LV — JARVIS**, Copyright © 2026 FatihMakes, licensed under **CC BY-NC 4.0**. The generated installer includes the upstream license and attribution.
+Os avisos legais de componentes de terceiros ficam em `THIRD_PARTY_NOTICES.txt` e nos arquivos de licença incluídos com a distribuição. Eles não precisam aparecer como créditos promocionais na interface principal do NICO.
 
-**Commercial use of the Mark-LV-derived application is not permitted by that license.** If you want to sell NICO commercially, the Mark-LV-derived parts would need to be replaced with code under a license that permits commercial distribution, or you would need separate permission from the copyright holder.
+## Uso comercial
+
+Partes derivadas do Mark-LV estão sujeitas à licença CC BY-NC 4.0. Isso impede uso comercial dessas partes sem permissão adicional ou substituição por componentes com licença compatível.
