@@ -22,6 +22,7 @@ import java.net.*;
 import java.text.Normalizer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.*;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
@@ -508,10 +509,57 @@ public class MainActivity extends Activity {
     private boolean pcOnline() {
         if (pcOnlineQuick()) return true;
         try {
-            return !pcIp().isEmpty() && InetAddress.getByName(pcIp()).isReachable(700);
-        } catch (Exception e) {
-            return false;
+            if (!pcIp().isEmpty() && InetAddress.getByName(pcIp()).isReachable(700)) return true;
+        } catch (Exception ignored) {}
+
+        // DHCP can change the PC IP. If the saved IP stopped responding,
+        // scan the same /24 subnet for the NICO dashboard and update automatically.
+        String found = discoverPcOnSubnet();
+        if (found != null && !found.isEmpty()) {
+            prefs.edit().putString("pc_ip", found).apply();
+            return true;
         }
+        return false;
+    }
+
+    private String discoverPcOnSubnet() {
+        String ip = pcIp();
+        if (ip == null || ip.isEmpty()) return null;
+
+        int lastDot = ip.lastIndexOf('.');
+        if (lastDot <= 0) return null;
+        String prefix = ip.substring(0, lastDot + 1);
+
+        ExecutorService pool = Executors.newFixedThreadPool(32);
+        CompletionService<String> cs = new ExecutorCompletionService<>(pool);
+        int jobs = 0;
+
+        try {
+            for (int i = 1; i <= 254; i++) {
+                final String host = prefix + i;
+                if (host.equals(ip)) continue;
+                jobs++;
+                cs.submit(() -> {
+                    if (portOpen(host, 8000, 180) || portOpen(host, 8001, 180)) return host;
+                    return null;
+                });
+            }
+
+            for (int i = 0; i < jobs; i++) {
+                try {
+                    Future<String> f = cs.poll(350, TimeUnit.MILLISECONDS);
+                    if (f == null) continue;
+                    String found = f.get();
+                    if (found != null) {
+                        pool.shutdownNow();
+                        return found;
+                    }
+                } catch (Exception ignored) {}
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        return null;
     }
 
     private void checkPc(boolean speak) {
@@ -525,15 +573,15 @@ public class MainActivity extends Activity {
             boolean online = pcOnline();
             runOnUiThread(() -> {
                 if (online) {
-                    status.setText("●  NICO DO PC ONLINE");
+                    status.setText("●  NICO DO PC ONLINE  •  " + pcIp());
                     status.setTextColor(green());
                     face.setMode("ONLINE");
                     if (speak) say("Seu computador está online.");
                 } else {
-                    status.setText("○  PC / NICO OFFLINE");
+                    status.setText("○  NICO DO PC NÃO RESPONDEU");
                     status.setTextColor(muted());
                     face.setMode("OFFLINE");
-                    if (speak) say("O NICO do computador ainda não respondeu.");
+                    if (speak) say("O aplicativo do computador pode estar aberto, mas o painel remoto não respondeu na rede. Confira o IP, o Wi-Fi e a porta 8000.");
                 }
             });
         }).start();
