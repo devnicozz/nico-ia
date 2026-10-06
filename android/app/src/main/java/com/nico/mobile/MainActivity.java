@@ -715,7 +715,7 @@ public class MainActivity extends Activity {
 
         wrap.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(remoteShell);
-        web.loadUrl("http://" + ip + ":8000/");
+        web.loadUrl("https://" + ip + ":8000/");
     }
 
     private void showCommandDialog() {
@@ -815,7 +815,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        web.loadUrl("http://" + ip + ":8000/login");
+        web.loadUrl("https://" + ip + ":8000/login");
     }
 
     public class CommandBridge {
@@ -1004,7 +1004,7 @@ public class MainActivity extends Activity {
 
         wrap.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(remoteShell);
-        web.loadUrl("http://" + ip + ":8000/");
+        web.loadUrl("https://" + ip + ":8000/");
     }
 
     public class PowerBridge {
