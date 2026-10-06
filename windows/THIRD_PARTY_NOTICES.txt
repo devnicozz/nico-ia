@@ -1,0 +1,12 @@
+THIRD-PARTY NOTICES
+
+NICO includes/adapts components from:
+
+Mark-LV — JARVIS
+Copyright (c) 2026 FatihMakes
+Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0).
+
+The full upstream license must be included with distributions that contain the licensed material.
+NICO's main interface does not need promotional third-party branding, but legal attribution and license notices must be preserved.
+
+Commercial use of the Mark-LV-derived portions is not permitted under CC BY-NC 4.0 without separate permission.
