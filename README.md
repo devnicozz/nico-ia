@@ -41,3 +41,30 @@ Os avisos legais de componentes de terceiros ficam em `THIRD_PARTY_NOTICES.txt` 
 ## Uso comercial
 
 Partes derivadas do Mark-LV estão sujeitas à licença CC BY-NC 4.0. Isso impede uso comercial dessas partes sem permissão adicional ou substituição por componentes com licença compatível.
+
+
+## NICO PRO — atualização atual
+
+A versão atual acrescenta:
+
+- Android com botões **Ligar PC**, **Desligar PC**, **Reiniciar PC**, status, remoto e voz;
+- desligar/reiniciar pelo celular exige confirmação humana no próprio celular e sessão remota autenticada;
+- correção do workflow Android SDK;
+- perfil de voz mais responsivo e menos propenso a ficar um turno atrasado;
+- timeout de ferramentas para evitar que uma automação deixe o assistente preso;
+- desativação do morning brief automático por padrão;
+- geração de imagens com Gemini 3.1 Image e salvamento local;
+- criação de sites a partir da identidade visual exibida na tela;
+- troca de wallpaper por arquivo local ou URL direta;
+- WhatsApp Web com verificação do contato;
+- interface Windows NICO com HUD de rosto/lip-sync, paleta preto/ciano/violeta, tipografia moderna e painéis maiores;
+- endpoint autenticado para ações de energia no Windows;
+- workflow **Build NICO Windows Installer** para gerar `NICO-Setup.exe` e `NICO-Portable.zip`.
+
+### Atualizar um NICO já instalado no PC
+
+Baixe o repositório e execute:
+
+`windows/APLICAR_NO_PC.bat`
+
+A API key existente é mantida no arquivo local de configuração. Nunca envie esse arquivo ao GitHub.
