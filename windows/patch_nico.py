@@ -177,6 +177,14 @@ if srv.exists():
                 return JSONResponse({"error": str(exc)}, status_code=500)
 '''
         s = s.replace(marker, endpoint)
+
+    # NICO_HTTP_REMOTE_FIX: keep the phone dashboard on plain HTTP inside the LAN.
+    # The dashboard already authenticates paired devices and encrypts command payloads;
+    # this avoids self-signed certificate blocks in Android/Chrome.
+    ssl_marker = '        return (certs / "jarvis.key").exists() and (certs / "jarvis.crt").exists()'
+    if ssl_marker in s:
+        s = s.replace(ssl_marker, '        return False  # NICO: local mobile dashboard uses HTTP')
+
     srv.write_text(s, encoding="utf-8")
 
 for rel in ("dashboard/static/app.html", "dashboard/static/login.html"):
