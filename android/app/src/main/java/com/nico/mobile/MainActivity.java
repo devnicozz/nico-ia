@@ -215,7 +215,7 @@ public class MainActivity extends Activity {
 
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
-        grid.setRowCount(2);
+        grid.setRowCount(3);
         grid.setUseDefaultMargins(false);
         grid.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
 
@@ -223,22 +223,30 @@ public class MainActivity extends Activity {
         Button stat = actionButton("●  STATUS", "Verificar conexão");
         Button remote = actionButton("▣  REMOTO", "Abrir NICO do PC");
         Button setup = actionButton("⚙  CONFIGURAR", "IP, MAC e rede");
+        Button shutdown = actionButton("⏻  DESLIGAR PC", "Confirmação no celular");
+        Button restart = actionButton("↻  REINICIAR PC", "Confirmação no celular");
 
         GridLayout.LayoutParams p1 = cell(0,0);
         GridLayout.LayoutParams p2 = cell(0,1);
         GridLayout.LayoutParams p3 = cell(1,0);
         GridLayout.LayoutParams p4 = cell(1,1);
+        GridLayout.LayoutParams p5 = cell(2,0);
+        GridLayout.LayoutParams p6 = cell(2,1);
         grid.addView(wake, p1);
         grid.addView(stat, p2);
         grid.addView(remote, p3);
         grid.addView(setup, p4);
+        grid.addView(shutdown, p5);
+        grid.addView(restart, p6);
 
         wake.setOnClickListener(v -> wakePc(false));
         stat.setOnClickListener(v -> checkPc(true));
         remote.setOnClickListener(v -> openDashboard());
         setup.setOnClickListener(v -> showSettings());
+        shutdown.setOnClickListener(v -> confirmPowerAction("Desligar computador", "shutdown"));
+        restart.setOnClickListener(v -> confirmPowerAction("Reiniciar computador", "restart"));
 
-        content.addView(grid, new LinearLayout.LayoutParams(-1, dp(184)));
+        content.addView(grid, new LinearLayout.LayoutParams(-1, dp(272)));
 
         TextView footer = label(
                 "NICO MOBILE  •  CONEXÃO LOCAL SEGURA  •  V1",
@@ -381,6 +389,17 @@ public class MainActivity extends Activity {
                 && any(q, "pc", "computador", "nico");
         boolean statusQuery = any(q, "status", "esta ligado", "ta ligado", "online");
         boolean remote = any(q, "painel", "remoto", "controle", "conecta", "conectar");
+        boolean shutdownVoice = any(q, "desliga", "desligar", "desligue") && any(q, "pc", "computador");
+        boolean restartVoice = any(q, "reinicia", "reiniciar", "reinicie") && any(q, "pc", "computador");
+
+        if (shutdownVoice) {
+            confirmPowerAction("Desligar computador", "shutdown");
+            return;
+        }
+        if (restartVoice) {
+            confirmPowerAction("Reiniciar computador", "restart");
+            return;
+        }
 
         if (power) {
             wakePc(remote);
@@ -635,6 +654,124 @@ public class MainActivity extends Activity {
         wrap.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(remoteShell);
         web.loadUrl("https://" + ip + ":8000/");
+    }
+
+    private void confirmPowerAction(String title, String action) {
+        if (pcIp().isEmpty()) {
+            showSettings();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(title + "?")
+                .setMessage(action.equals("shutdown")
+                        ? "O computador será desligado. Confirme apenas se você realmente quer encerrar a sessão."
+                        : "O computador será reiniciado. Confirme apenas se você realmente quer continuar.")
+                .setPositiveButton(action.equals("shutdown") ? "Desligar" : "Reiniciar",
+                        (d, w) -> openDashboardForPower(action))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void openDashboardForPower(String action) {
+        final String ip = pcIp();
+        status.setText("CONECTANDO AO NICO DO PC…");
+        face.setMode("CONECTANDO");
+
+        FrameLayout remoteShell = new FrameLayout(this);
+        remoteShell.setBackgroundColor(Color.rgb(2, 5, 10));
+
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        remoteShell.addView(wrap, new FrameLayout.LayoutParams(-1, -1));
+
+        TextView waiting = label("NICO // AUTENTICANDO AÇÃO DE ENERGIA", 12, text());
+        waiting.setPadding(dp(16), dp(14), dp(16), dp(14));
+        waiting.setBackground(rounded(Color.rgb(7, 16, 24), Color.rgb(24, 68, 88), 14));
+        wrap.addView(waiting, new LinearLayout.LayoutParams(-1, dp(58)));
+
+        WebView web = new WebView(this);
+        WebSettings ws = web.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        web.addJavascriptInterface(new PowerBridge(action), "NicoNative");
+
+        final boolean[] sent = {false};
+        final boolean[] triedHttp = {false};
+
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler,
+                                           android.net.http.SslError error) {
+                String host = "";
+                try { host = Uri.parse(error.getUrl()).getHost(); } catch (Exception ignored) {}
+                if (ip.equals(host)) handler.proceed(); else handler.cancel();
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame() && !triedHttp[0]) {
+                    triedHttp[0] = true;
+                    view.loadUrl("http://" + ip + ":8000/");
+                }
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                if (sent[0]) return;
+                Uri u;
+                try { u = Uri.parse(url); } catch (Exception e) { return; }
+                String path = u.getPath();
+                if (!"/".equals(path)) return;
+
+                sent[0] = true;
+                waiting.setText(action.equals("shutdown")
+                        ? "ENVIANDO COMANDO: DESLIGAR"
+                        : "ENVIANDO COMANDO: REINICIAR");
+
+                String js =
+                        "(async()=>{" +
+                        "const t=sessionStorage.getItem('jarvis_token');" +
+                        "if(!t){window.NicoNative.powerError('not_paired');return;}" +
+                        "try{" +
+                        "const r=await fetch('/api/mobile-power',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({action:'" + action + "',confirm:'YES'})});" +
+                        "const d=await r.json();" +
+                        "if(r.ok&&d.ok)window.NicoNative.powerOk();else window.NicoNative.powerError(d.error||'failed');" +
+                        "}catch(e){window.NicoNative.powerError(String(e));}" +
+                        "})()";
+                view.evaluateJavascript(js, null);
+            }
+        });
+
+        wrap.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
+        setContentView(remoteShell);
+        web.loadUrl("https://" + ip + ":8000/");
+    }
+
+    public class PowerBridge {
+        private final String action;
+        PowerBridge(String action) { this.action = action; }
+
+        @JavascriptInterface
+        public void powerOk() {
+            runOnUiThread(() -> {
+                say(action.equals("shutdown")
+                        ? "Comando confirmado. O computador está desligando."
+                        : "Comando confirmado. O computador está reiniciando.");
+                new Handler(Looper.getMainLooper()).postDelayed(() -> buildHome(), 1500);
+            });
+        }
+
+        @JavascriptInterface
+        public void powerError(String error) {
+            runOnUiThread(() -> {
+                if ("not_paired".equals(error)) {
+                    say("Primeiro faça o pareamento com o NICO do computador nesta tela. Depois tente novamente.");
+                } else {
+                    say("Não consegui executar a ação de energia: " + error);
+                }
+            });
+        }
     }
 
     private EditText field(String hint, String value) {
